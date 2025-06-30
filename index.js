@@ -242,7 +242,7 @@ client.on('interactionCreate', async ix => {
           'Cracked is an online, free-to-play Rocket League tournament platform for all ranks of players. ' +
           'By using this bot, you can create a tournament on https://crackedgaming.co, which uses a unique ladder system to run qualifiers before moving to start.gg for the main event.\n\n' +
           '🎁 Prize pool is automatically covered starting at $25, plus $2 for each team that joins. ' +
-          'As the tournament creator, you earn $1 for every team you bring in. ' +
+          'As the tournament creator, you earn $1 for every team you bring in. However, you must have at LEAST 10 teams signed up 12 hours before the event begins to launch the tournament.' +
           'If you opt for custom graphics, the creator share decreases to $0.50 per team and requires 10 days lead time.\n\n' +
           'Thank you so much for using Cracked! If you have any questions, reach out to @cracked.gaming on Discord.'
         )
