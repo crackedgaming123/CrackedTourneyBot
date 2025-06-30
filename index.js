@@ -1,9 +1,15 @@
-const { Client, GatewayIntentBits, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder, TextChannel } = require('discord.js');
 require('dotenv').config();
+
+// Scheduling and templating libraries
+const { DateTime } = require('luxon');
+const schedule = require('node-schedule');
+const { shuffle } = require('lodash');
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 const BOT_TOKEN      = process.env.BOT_TOKEN;
 
+// In-memory session store for /setup
 const sessions = new Map();
 
 // Generate continuous EST times from 12AM to 11PM
@@ -18,9 +24,15 @@ function makeTimeOptions() {
 // Dynamic embed color based on progress (red → yellow → green)
 function getEmbedColor(current, total) {
   const fraction = current / total;
-  if (fraction < 0.33) return 0xff0000;  // red
-  if (fraction < 0.66) return 0xffff00;  // yellow
-  return 0x00ff00;                      // green
+  if (fraction < 0.33) return 0xff0000;
+  if (fraction < 0.66) return 0xffff00;
+  return 0x00ff00;
+}
+
+// Simple progress bar text
+function makeProgressBar(current, total) {
+  const filled = Math.round((current / total) * 10);
+  return 'Progress: ' + '█'.repeat(filled) + '░'.repeat(10 - filled) + ` ${current}/${total}`;
 }
 
 // Questions for the /setup flow
@@ -48,312 +60,296 @@ let questions = [
   { key: 'streaming',         type: 'buttons',text: '🎥 Will the tournament be streamed?', options: ['No', 'Yes'] },
   { key: 'streamingLink',     type: 'text',   text: '📺 Please provide your streaming link (Twitch/YouTube URL)', skip: true },
   { key: 'promoMaterials',    type: 'buttons',text: '🎨 Promotional materials or graphics? (earnings drop to $0.50/team)', options: ['No', 'Yes'] },
-  { key: 'contact',           type: 'text',   text: '📩 Please provide your Discord tag for contact (e.g., RocketAdmin#1234)' },
+  { key: 'contact',           type: 'text',   text: '📩 Please provide your Discord tag for contact (e.g., RocketAdmin#1234)' }
 ];
 
+// Announcement templates
+const leadUpTemplates = [
+  '🔥 ${daysLeft} days until our tournament on **${date}**! Register now 👉 #signup',
+  '⏳ Only ${daysLeft} days left until **${date}**. Don’t miss out!',
+  '🎉 ${daysLeft} days and counting until our big event on **${date}**! #signup',
+  '🚀 ${daysLeft} days till lift-off on **${date}**. Secure your spot!',
+  '⚔️ ${daysLeft} days remaining until the tournaments begin. Sign up!',
+  '🎮 Tick tock! ${daysLeft} days until **${date}** tournament. Join now.',
+  '📢 Heads up: ${daysLeft} days until our tourney on **${date}**. Register!',
+  '☄️ ${daysLeft} days to go before the action kicks off! #signup',
+  '✨ ${daysLeft} days until gaming glory on **${date}**! Ready up.',
+  '🏆 ${daysLeft} days until we battle it out on **${date}**. See you there!'
+];
+const threeHrTemplates = [
+  '⏰ 3 hours left until our tourney starts at **${time} ET**! Final call 👉 #signup',
+  '⚠️ Just 3 hours before showtime at **${time} ET**. Last chance to sign up!',
+  '🔔 3-hour countdown begins now! Tourney starts at **${time} ET**. Sign up.',
+  '🚨 3 hours until kickoff at **${time} ET**. Get in the game now!',
+  '⏱️ Only 3 hours remain until **${time} ET** start. Register now!',
+  '🎯 3 hours till tournament start at **${time} ET**. Ready? #signup',
+  '📣 3 hours ’til we go live at **${time} ET**. Don’t miss out!',
+  '💥 3 hours before the action kicks off at **${time} ET**. Join now!',
+  '📊 3 hours on the clock until **${time} ET** start. Secure your spot!',
+  '🔥 3 hours left until the tournament at **${time} ET**. Last sign-ups!'
+];
+const startTemplates = [
+  '🚨 It’s go time! Our tournament is live now. Join 👉 #signup',
+  '🎉 The tournament starts now! Jump in 👉 #signup',
+  '🔥 We’re live! The tournament is underway—sign up and play!',
+  '⏭️ Tournament start! Games begin now—get playing 👉 #signup',
+  '📢 It’s live! Head to #signup and join the tournament now.',
+  '⚔️ The battle begins! Our tournament is live. Sign up now!',
+  '🏁 And we’re off! Tournament is live—jump in and compete.',
+  '🚀 Live now: our tournament begins. Claim your spot 👉 #signup',
+  '🔥 Now live! Our tournament kicks off—sign up instantly.',
+  '🎮 Tournament is live now! Get in the game 👉 #signup'
+];
+const ctaTemplates = [
+  '⚡️ Can’t get enough? Jump into the Cracked Discord for nonstop tournaments and giveaways! https://discord.gg/qXmjxzHFPf',
+  '🔥 Craving more action? Join the Cracked Discord and never miss a tournament! https://discord.gg/qXmjxzHFPf',
+  '🎉 Want extra hype? Slide into the Cracked Discord for all our live tournaments and surprises! https://discord.gg/qXmjxzHFPf'
+];
+
+// Scheduler function
+function scheduleTournamentAnnouncements({ guildId, channelId, startISO }) {
+  const startDT = DateTime.fromISO(startISO, { zone: 'America/New_York' });
+  const now     = DateTime.local().setZone('America/New_York');
+  const daysOut = Math.ceil(startDT.startOf('day').diff(now.startOf('day'), 'days').days);
+
+  const [dayBeforeCTA, startCTA] = shuffle(ctaTemplates);
+  // lead-up every other day at 6 PM ET
+  const leadUpDates = [];
+  for (let offset = daysOut; offset > 0; offset -= 2) {
+    const dt = startDT.minus({ days: offset }).set({ hour: 18, minute: 0, second: 0 });
+    if (dt > now) leadUpDates.push({ dt, offset });
+  }
+  const shuffledLead = shuffle(leadUpTemplates);
+  leadUpDates.forEach(({ dt, offset }, idx) => {
+    const tpl = shuffledLead[idx % shuffledLead.length];
+    schedule.scheduleJob(dt.toJSDate(), async () => {
+      const daysLeft = Math.ceil(startDT.startOf('day')
+        .diff(DateTime.local().setZone('America/New_York').startOf('day'), 'days').days);
+      let msg = tpl.replace('${daysLeft}', daysLeft).replace('${date}', startDT.toFormat('MMMM d'));
+      if (offset === 1) msg += `
+${dayBeforeCTA}`;
+      const guild = await client.guilds.fetch(guildId);
+      const chan  = await guild.channels.fetch(channelId);
+      if (chan?.isText()) chan.send(msg);
+    });
+  });
+  // 3-hour alert
+  const threeDT = startDT.minus({ hours: 3 });
+  const threeTpl = shuffle(threeHrTemplates)[0];
+  schedule.scheduleJob(threeDT.toJSDate(), async () => {
+    const msg = threeTpl.replace('${time}', startDT.toFormat('h:mm a'));
+    const guild = await client.guilds.fetch(guildId);
+    const chan  = await guild.channels.fetch(channelId);
+    if (chan?.isText()) chan.send(msg);
+  });
+  // go-time announcement
+  const startTpl = shuffle(startTemplates)[0];
+  schedule.scheduleJob(startDT.toJSDate(), async () => {
+    const msg = `${startTpl}
+${startCTA}`;
+    const guild = await client.guilds.fetch(guildId);
+    const chan  = await guild.channels.fetch(channelId);
+    if (chan?.isText()) chan.send(msg);
+  });
+}
+
+// Discord client setup
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
+// Register slash commands & schedule existing
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}!`);
-
-  // Register slash commands
   const cmds = [
     new SlashCommandBuilder().setName('ping').setDescription('Check bot status'),
     new SlashCommandBuilder().setName('info').setDescription('Learn about Cracked platform'),
     new SlashCommandBuilder().setName('help').setDescription('Show available commands and permissions'),
+    new SlashCommandBuilder().setName('welcome').setDescription('Get started with Cracked Bot'),
     new SlashCommandBuilder()
       .setName('setup')
       .setDescription('Start a tournament setup (admins only)')
       .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
       .setDMPermission(false),
-    new SlashCommandBuilder().setName('cancelsetup').setDescription('Cancel your active tournament setup'),
+    new SlashCommandBuilder().setName('cancelsetup').setDescription('Cancel your active tournament setup')
   ].map(cmd => cmd.toJSON());
-
   await client.application.commands.set(cmds);
+  // TODO: load saved tournaments and call scheduleTournamentAnnouncements
 });
 
-// Send welcome message when joining a new server
+// Welcome on bot join
 client.on('guildCreate', async guild => {
   try {
     const channel = guild.channels.cache.find(ch =>
-      ch.isTextBased() &&
-      ch.permissionsFor(guild.members.me).has(PermissionsBitField.Flags.SendMessages)
+      ch.isTextBased() && ch.permissionsFor(guild.members.me).has(PermissionsBitField.Flags.SendMessages)
     );
     if (!channel) return;
-
     const embed = new EmbedBuilder()
       .setTitle('👋 Thanks for adding Cracked Bot!')
       .setDescription(
-        'Welcome to Cracked Gaming’s Tournament Bot! 🎮\n\n' +
-        '✅ Members with **Manage Server** permission can use `/setup` to build tournaments.\n' +
-        'ℹ️ Use `/help` anytime to see commands.\n\n' +
-        '[Visit crackedgaming.co](https://crackedgaming.co)'
+        'Thanks for downloading Cracked Bot! 🎮\n\n' +
+        'Use `/welcome` to get started and learn how to set up your first tournament.\n' +
+        'Or try `/setup` whenever you’re ready to create a tournament.\n\n' +
+        'Need help? Reach out to @cracked.gaming on Discord.'
       )
       .setColor(0xff6600);
-
     await channel.send({ embeds: [embed] });
   } catch (err) {
-    console.error(`Failed to send welcome in guild ${guild.id}:`, err);
+    console.error(err);
   }
 });
 
-// Simple progress bar text
-function makeProgressBar(current, total) {
-  const filled = Math.round((current / total) * 10);
-  return 'Progress: ' + '█'.repeat(filled) + '░'.repeat(10 - filled) + ` ${current}/${total}`;
-}
-
+// Interaction handler
 client.on('interactionCreate', async ix => {
-  // Handle slash commands
   if (!ix.isChatInputCommand()) return;
   const { commandName, member, user, channel } = ix;
   const uid = user.id;
-
-  // /ping
-  if (commandName === 'ping') {
-    return ix.reply('🏓 Pong!');
-  }
-
-  // /info
-  if (commandName === 'info') {
-    const info = new EmbedBuilder()
-      .setTitle('About Cracked')
-      .setDescription('Free Rocket League tournament hosting with ladder qualifiers.')
-      .addFields(
-        { name: 'How to Use', value: 'Use `/setup` to configure a tournament.' },
-        { name: 'Ladder System', value: 'Qualify through ladder for bracket seeding.' },
-        { name: 'Payouts', value: 'Base $25 pool; $1/team, $2 adds per team.' },
-        { name: 'Graphics Fee', value: 'Graphics lowers earnings to $0.50/team.' },
-        { name: 'Website', value: '[crackedgaming.co](https://crackedgaming.co)' },
-        { name: 'Free to Play', value: 'Hosting is completely free.' }
-      )
-      .setColor(0xff6600);
-    return ix.reply({ embeds: [info] });
-  }
-
-  // /help
-  if (commandName === 'help') {
-    const helpEmbed = new EmbedBuilder()
-      .setTitle('📖 Cracked Bot Help')
-      .setDescription('Here’s a list of commands you can use:')
-      .addFields(
-        { name: '/ping', value: 'Check bot status (anyone).' },
-        { name: '/info', value: 'Learn about Cracked Gaming (anyone).' },
-        { name: '/setup', value: 'Start a tournament setup (Manage Server required).' },
-        { name: '/cancelsetup', value: 'Cancel your active setup (anyone).' }
-      )
-      .setColor(0xff6600);
-    return ix.reply({ embeds: [helpEmbed] });
-  }
-
-  // /cancelsetup
-  if (commandName === 'cancelsetup') {
-    if (sessions.has(uid)) {
-      sessions.delete(uid);
-      return ix.reply({ content: '❌ Your tournament setup has been canceled.', ephemeral: true });
+  switch (commandName) {
+    case 'ping':
+      return ix.reply('🏓 Pong!');
+    case 'info': {
+      const info = new EmbedBuilder()
+        .setTitle('About Cracked')
+        .setDescription('Free Rocket League tournament hosting with ladder qualifiers.')
+        .addFields(
+          { name: 'Platform', value: 'Create free tournaments for all ranks' },
+          { name: 'Ladder Qualifiers', value: 'Unique system before main event' },
+          { name: 'Prize Pool', value: 'Automatic $25 base + $2/team' },
+          { name: 'Creator Earnings', value: '$1/team joined ($0.50 with graphics)' },
+          { name: 'Custom Graphics', value: 'Requires 10 days lead time' }
+        )
+        .setColor(0xff6600);
+      return ix.reply({ embeds: [info] });
     }
-    return ix.reply({ content: '⚠️ You have no active tournament setup.', ephemeral: true });
-  }
-
-  // /setup
-  if (commandName === 'setup') {
-    // Guard against multiple setups
-    if (sessions.has(uid)) {
-      return ix.reply({ content: '🚨 You already have an active tournament setup! Finish it or use `/cancelsetup`.', ephemeral: true });
+    case 'help': {
+      const help = new EmbedBuilder()
+        .setTitle('📖 Cracked Bot Help')
+        .setDescription('Commands available:')
+        .addFields(
+          { name: '/ping', value: 'Check bot status.' },
+          { name: '/info', value: 'Learn about Cracked.' },
+          { name: '/welcome', value: 'Intro and setup guide.' },
+          { name: '/setup', value: 'Run through tournament setup.' },
+          { name: '/cancelsetup', value: 'Cancel your active setup.' }
+        )
+        .setColor(0xff6600);
+      return ix.reply({ embeds: [help] });
     }
-    // Permission check
-    if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-      return ix.reply({ content: '🚫 You need Manage Server permission to run setup.', ephemeral: true });
+    case 'welcome': {
+      const welcome = new EmbedBuilder()
+        .setTitle('👋 Welcome to Cracked!')
+        .setDescription(
+          'Cracked is an online, free-to-play Rocket League tournament platform for all ranks of players. ' +
+          'By using this bot, you can create a tournament on https://crackedgaming.co, which uses a unique ladder system to run qualifiers before moving to start.gg for the main event.\n\n' +
+          '🎁 Prize pool is automatically covered starting at $25, plus $2 for each team that joins. ' +
+          'As the tournament creator, you earn $1 for every team you bring in. ' +
+          'If you opt for custom graphics, the creator share decreases to $0.50 per team and requires 10 days lead time.\n\n' +
+          'Thank you so much for using Cracked! If you have any questions, reach out to @cracked.gaming on Discord.'
+        )
+        .setColor(0x00ff00);
+      return ix.reply({ embeds: [welcome] });
     }
-
-    await ix.reply({ content: '📝 Starting setup…', ephemeral: true });
-    sessions.set(uid, {});
-    let idx = 0;
-
-    // Recursive function to ask next question
-    const askNext = async () => {
-      while (questions[idx]?.skip) idx++;
-      if (idx >= questions.length) {
-        // All done—build summary
-        const sess = sessions.get(uid);
-        const summary = new EmbedBuilder()
-          .setTitle('🏁 Tournament Setup Complete!')
-          .setColor(0x00ff00)
-          .addFields(...Object.entries(sess).map(([k,v]) => ({ name: k, value: v.toString(), inline: true })));
-
-        // Send summary
-        await channel.send({ embeds: [summary] });
-
-        // Ask if they want it in DMs
-        const dmRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('dm_summary').setLabel('📬 DM Me the Summary').setStyle(ButtonStyle.Success)
-        );
-        await channel.send({ content: 'Would you like a copy of your summary in DMs?', components: [dmRow] });
-
-        // Collector for DM button
-        const dmCollector = channel.createMessageComponentCollector({ filter: i => i.user.id === uid, max: 1, time: 60000 });
-        dmCollector.on('collect', async btn => {
-          await user.send({ embeds: [summary] });
-          await btn.update({ content: '✅ Sent to your DMs!', components: [] });
-        });
-
-        // Private log
-        if (LOG_CHANNEL_ID) {
-          try {
-            const logCh = await client.channels.fetch(LOG_CHANNEL_ID);
-            if (logCh?.isTextBased()) {
-              await logCh.send({ content: `📥 New setup by <@${uid}>`, embeds: [summary] });
-            }
-          } catch (err) {
-            console.error('Logging failed:', err);
-          }
-        }
+    case 'cancelsetup':
+      if (sessions.has(uid)) {
         sessions.delete(uid);
-        return;
+        return ix.reply({ content: '❌ Your setup has been canceled.', ephemeral: true });
       }
-
-      // Ask question #idx
-      const q = questions[idx];
-      await channel.sendTyping();
-      const color = getEmbedColor(idx + 1, questions.length);
-      const embed = new EmbedBuilder()
-        .setTitle(`Question ${idx+1} of ${questions.length}`)
-        .setDescription(q.text)
-        .setColor(color)
-        .setFooter({ text: makeProgressBar(idx + 1, questions.length) });
-
-      let collector;
-      // Build input based on type
-      if (q.type === 'text') {
-        await channel.send({ embeds: [embed] });
-        collector = channel.createMessageCollector({ filter: m => m.author.id === uid, max: 1, time: 300000 });
-      } else if (q.type === 'date') {
-        // Build date options (filter endDate if needed)
-        const opts = [];
-        if (q.key === 'endDate') {
-          const start = new Date(sessions.get(uid).startDate);
-          for (let d=0; d<25; d++) {
-            const dt = new Date(); dt.setDate(dt.getDate()+d);
-            if (dt < start) continue;
-            opts.push({ label: dt.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}), value: dt.toISOString().split('T')[0] });
+      return ix.reply({ content: '⚠️ No active setup to cancel.', ephemeral: true });
+    case 'setup': {
+      if (sessions.has(uid)) return ix.reply({ content: '🚨 Finish current setup or use `/cancelsetup` first.', ephemeral: true });
+      if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return ix.reply({ content: '🚫 Manage Server required.', ephemeral: true });
+      await ix.reply({ content: '📝 Starting setup…', ephemeral: true });
+      sessions.set(uid, {});
+      let idx = 0;
+      const askNext = async () => {
+        while (questions[idx]?.skip) idx++;
+        if (idx >= questions.length) {
+          const sess = sessions.get(uid);
+          const summary = new EmbedBuilder()
+            .setTitle('🏁 Tournament Setup Complete!')
+            .setColor(0x00ff00)
+            .addFields(...Object.entries(sess).map(([k,v]) => ({ name: k, value: v.toString(), inline: true })));
+          await channel.send({ embeds: [summary] });
+          const dmRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('dm_summary').setLabel('📬 DM Summary').setStyle(ButtonStyle.Success)
+          );
+          await channel.send({ content: 'DM a copy?', components: [dmRow] });
+          const dmc = channel.createMessageComponentCollector({ filter: i => i.user.id===uid, max:1, time:60000 });
+          dmc.on('collect', async btn => { await user.send({ embeds: [summary] }); await btn.update({ content:'✅ Sent!', components:[] }); });
+          if (LOG_CHANNEL_ID) {
+            const logCh = await client.channels.fetch(LOG_CHANNEL_ID);
+            if (logCh.isText()) logCh.send({ content: `📥 New setup by <@${uid}>`, embeds: [summary] });
           }
-        } else {
+          if (sess.updates.toLowerCase()==='yes') {
+            const startISO = DateTime.fromFormat(`${sess.startDate} ${sess.startTime}`, 'yyyy-MM-dd h:mm a z', { zone:'America/New_York' }).toISO();
+            scheduleTournamentAnnouncements({ guildId: channel.guild.id, channelId: sess.updateChannelId, startISO });
+          }
+          sessions.delete(uid);
+          return;
+        }
+        const q = questions[idx];
+        const embed = new EmbedBuilder().setTitle(`Question ${idx+1}/${questions.length}`).setDescription(q.text).setColor(getEmbedColor(idx+1,questions.length)).setFooter({ text: makeProgressBar(idx+1,questions.length) });
+        let collector;
+        if (q.type==='text') {
+          await channel.send({ embeds:[embed] });
+          collector = channel.createMessageCollector({ filter:m=>m.author.id===uid, max:1, time:300000 });
+        } else if (q.type==='date') {
+          const opts=[];
+          const start = q.key==='endDate' ? new Date(sessions.get(uid).startDate) : null;
           for (let d=0; d<25; d++) {
-            const dt = new Date(); dt.setDate(dt.getDate()+d);
+            const dt=new Date(); dt.setDate(dt.getDate()+d);
+            if (start && dt<start) continue;
             let label;
-            if (d===0) label = `Today (${dt.toLocaleDateString('en-US')})`;
-            else if (d===1) label = `Tomorrow (${dt.toLocaleDateString('en-US')})`;
-            else if (d===2) label = `Day After Tomorrow (${dt.toLocaleDateString('en-US')})`;
-            else label = dt.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+            if (d===0) label=`Today (${dt.toLocaleDateString('en-US')})`;
+            else if (d===1) label=`Tomorrow (${dt.toLocaleDateString('en-US')})`;
+            else label=dt.toLocaleDateString('en-US',{month:'long', day:'numeric', year:'numeric'});
             opts.push({ label, value: dt.toISOString().split('T')[0] });
           }
-        }
-        const menu = new StringSelectMenuBuilder()
-          .setCustomId(`date_${q.key}`)
-          .setPlaceholder('Select a date')
-          .addOptions(opts);
-        await channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
-        collector = channel.createMessageComponentCollector({ filter: i => i.user.id === uid, max: 1, time: 300000 });
-      } else if (q.type === 'select') {
-        const menu = new StringSelectMenuBuilder()
-          .setCustomId(`sel_${q.key}`)
-          .setPlaceholder('Choose an option')
-          .addOptions(q.options.map(o => ({ label: o, value: o })));
-        await channel.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
-        collector = channel.createMessageComponentCollector({ filter: i => i.user.id === uid, max: 1, time: 300000 });
-      } else { // buttons
-        const row = new ActionRowBuilder();
-        q.options.forEach(opt => {
-          row.addComponents(new ButtonBuilder().setCustomId(opt).setLabel(opt).setStyle(ButtonStyle.Primary));
-        });
-        await channel.send({ embeds: [embed], components: [row] });
-        collector = channel.createMessageComponentCollector({ filter: i => i.user.id === uid, max: 1, time: 300000 });
-      }
-
-      // Inactivity reminder
-      const reminder = setTimeout(() => {
-        if (sessions.has(uid)) channel.send(`<@${uid}> ⏳ Still there? Don’t forget to finish your setup!`);
-      }, 120000);
-
-      collector.on('collect', async col => {
-        clearTimeout(reminder);
-        const sess = sessions.get(uid);
-        let ans;
-        if (q.type === 'text') {
-          ans = col.content;
-        } else if (q.type === 'date') {
-          ans = col.values[0];
-          await col.update({ content: `✅ Date set to **${ans}**`, embeds: [], components: [] });
-        } else if (q.type === 'select') {
-          ans = col.values[0];
-          await col.update({ content: `✅ You chose **${ans}**`, embeds: [], components: [] });
+          const menu = new StringSelectMenuBuilder().setCustomId(`date_${q.key}`).setPlaceholder('Select a date').addOptions(opts);
+          await channel.send({ embeds:[embed], components:[new ActionRowBuilder().addComponents(menu)] });
+          collector = channel.createMessageComponentCollector({ filter:i=>i.user.id===uid, max:1, time:300000 });
+        } else if (q.type==='select') {
+          const menu=new StringSelectMenuBuilder().setCustomId(`sel_${q.key}`).setPlaceholder('Choose one').addOptions(q.options.map(o=>({label:o,value:o})));
+          await channel.send({embeds:[embed],components:[new ActionRowBuilder().addComponents(menu)]});
+          collector=channel.createMessageComponentCollector({filter:i=>i.user.id===uid,max:1,time:300000});
         } else {
-          ans = col.customId;
-          await col.update({ content: `✅ You chose **${ans}**`, embeds: [], components: [] });
+          const row=new ActionRowBuilder();
+          q.options.forEach(opt=>row.addComponents(new ButtonBuilder().setCustomId(opt).setLabel(opt).setStyle(ButtonStyle.Primary)));
+          await channel.send({embeds:[embed],components:[row]});
+          collector=channel.createMessageComponentCollector({filter:i=>i.user.id===uid,max:1,time:300000});
         }
-        sess[q.key] = ans;
-
-        // Conditional logic
-        if (q.key === 'multiDay' && ans.toLowerCase() === 'yes') {
-          questions.find(x => x.key === 'endDate').skip = false;
-          questions.find(x => x.key === 'endTime').skip = false;
-        }
-        if (q.key === 'endTime') {
-          const startDT = new Date(`${sess.startDate} ${sess.startTime}`);
-          const endDT   = new Date(`${sess.endDate} ${sess.endTime}`);
-          if (endDT <= startDT) {
-            await channel.send('❌ End must be after start. Please re-pick.');
-            idx = questions.findIndex(x => x.key === 'endDate');
-            return askNext();
-          }
-        }
-        if (q.key === 'gameMode' && ans === 'Other') {
-          questions.find(x => x.key === 'gameModeOther').skip = false;
-        }
-        if (q.key === 'mainEvent' && ans.toLowerCase() === 'no') {
-          ['mainEventFormat','teamsAdvancing','mainEventBO','seeding'].forEach(k => questions.find(x => x.key === k).skip = true);
-        }
-        if (q.key === 'updates' && ans.toLowerCase() === 'no') {
-          questions.find(x => x.key === 'updateChannel').skip = true;
-        }
-        if (q.key === 'updateChannel') {
-          const ch = col.mentions.channels.first();
-          if (ch) sess.updateChannelId = ch.id;
-          else {
-            await channel.send('❌ Please @mention a valid channel.');
-            sessions.delete(uid);
-            return;
-          }
-        }
-        if (q.key === 'streaming' && ans.toLowerCase() === 'yes') {
-          questions.find(x => x.key === 'streamingLink').skip = false;
-        }
-
-        idx++;
-        askNext();
-      });
-
-      collector.on('end', c => {
-        clearTimeout(reminder);
-        if (!c.size) {
-          channel.send('⏰ Time’s up! Restart with /setup');
-          sessions.delete(uid);
-        }
-      });
-    };
-
-    askNext();
+        const reminder=setTimeout(()=>{ if(sessions.has(uid)) channel.send(`<@${uid}> ⏳ Still there? Finish setup!`); },120000);
+        collector.on('collect',async col=>{
+          clearTimeout(reminder);
+          const sess=sessions.get(uid); let ans;
+          if(q.type==='text') ans=col.content;
+          else if(q.type==='date'||q.type==='select'){ ans=col.values[0]; await col.update({content:`✅ Set to **${ans}**`,embeds:[],components:[]}); }
+          else { ans=col.customId; await col.update({content:`✅ Chose **${ans}**`,embeds:[],components:[]}); }
+          sess[q.key]=ans;
+          if(q.key==='multiDay'&&ans.toLowerCase()==='yes'){ questions.find(x=>x.key==='endDate').skip=false; questions.find(x=>x.key==='endTime').skip=false; }
+          if(q.key==='endTime'){ const s=new Date(`${sess.startDate} ${sess.startTime}`), e=new Date(`${sess.endDate} ${sess.endTime}`); if(e<=s){ await channel.send('❌ End must be after start.'); idx=questions.findIndex(x=>x.key==='endDate'); return askNext(); }}
+          if(q.key==='gameMode'&&ans==='Other') questions.find(x=>x.key==='gameModeOther').skip=false;
+          if(q.key==='mainEvent'&&ans.toLowerCase()==='no') ['mainEventFormat','teamsAdvancing','mainEventBO','seeding'].forEach(k=>questions.find(x=>x.key===k).skip=true);
+          if(q.key==='updates'&&ans.toLowerCase()==='no') questions.find(x=>x.key==='updateChannel').skip=true;
+          if(q.key==='updateChannel'){ const ch=col.mentions.channels.first(); if(ch) sess.updateChannelId=ch.id; else { await channel.send('❌ Please @mention the channel.'); sessions.delete(uid); return; }}
+          if(q.key==='streaming'&&ans.toLowerCase()==='yes') questions.find(x=>x.key==='streamingLink').skip=false;
+          idx++; askNext();
+        });
+        collector.on('end',c=>{ clearTimeout(reminder); if(!c.size){ channel.send('⏰ Time’s up! Use `/setup` to restart.'); sessions.delete(uid); }});
+      };
+      askNext();
+      break;
+    }
   }
 });
 
-// Reply when bot is pinged by mention
+// Respond to direct mentions
 client.on('messageCreate', message => {
   if (message.author.bot) return;
   if (message.mentions.has(client.user)) {
-    message.channel.send(`Hey ${message.author}! Ready to build your next Rocket League tournament?`);
+    message.channel.send(`Hey ${message.author}, ready to build your next Rocket League tournament?`);
   }
 });
 
+// Login
 client.login(BOT_TOKEN);
