@@ -268,7 +268,7 @@ client.on('interactionCreate', async ix => {
       sessions.set(uid, {});
       let idx = 0;
       const askNext = async () => {
-        while (questions[idx]?.skip) idx++;
+        while (idx < questions.length && questions[idx]?.skip) idx++;
         if (idx >= questions.length) {
           const sess = sessions.get(uid);
           const summary = new EmbedBuilder()
