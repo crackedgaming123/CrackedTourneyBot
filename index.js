@@ -276,16 +276,22 @@ client.on('interactionCreate', async ix => {
           await channel.send({ content: 'DM a copy?', components: [dmRow] });
           const dmc = channel.createMessageComponentCollector({ filter: i => i.user.id===uid, max:1, time:60000 });
           dmc.on('collect', async btn => { await user.send({ embeds: [summary] }); await btn.update({ content:'✅ Sent!', components:[] }); });
-          if (LOG_CHANNEL_ID) {
-            const logCh = await client.channels.fetch(LOG_CHANNEL_ID);
-            if (logCh.isText()) logCh.send({ content: `📥 New setup by <@${uid}>`, embeds: [summary] });
-          }
-          if (sess.updates.toLowerCase()==='yes') {
-            const startISO = DateTime.fromFormat(`${sess.startDate} ${sess.startTime}`, 'yyyy-MM-dd h:mm a z', { zone:'America/New_York' }).toISO();
-            scheduleTournamentAnnouncements({ guildId: channel.guild.id, channelId: sess.updateChannelId, startISO });
-          }
-          sessions.delete(uid);
-          return;
+         if (LOG_CHANNEL_ID) {
+  try {
+    const logCh = await client.channels.fetch(LOG_CHANNEL_ID);
+    // in v14+, use isTextBased() so you don’t accidentally skip real text channels
+    if (logCh.isTextBased()) {
+      await logCh.send({
+        // @here guarantees you get a ping
+        content: `@here 📥 New tournament setup by <@${uid}> in **${channel.guild.name}**!`,
+        embeds: [summary]
+      });
+    }
+  } catch (err) {
+    console.error('Failed to send setup log:', err);
+  }
+}
+
         }
         const q = questions[idx];
         const embed = new EmbedBuilder().setTitle(`Question ${idx+1}/${questions.length}`).setDescription(q.text).setColor(getEmbedColor(idx+1,questions.length)).setFooter({ text: makeProgressBar(idx+1,questions.length) });
