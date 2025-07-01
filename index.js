@@ -283,7 +283,7 @@ client.on('interactionCreate', async ix => {
     if (logCh.isTextBased()) {
       await logCh.send({
         // @here guarantees you get a ping
-        content: `@here 📥 New tournament setup by <@${uid}> in **${channel.guild.name}**!`,
+        content: `@andy 📥 New tournament setup by <@${uid}> in **${channel.guild.name}**!`,
         embeds: [summary]
       });
     }
