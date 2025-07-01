@@ -130,7 +130,9 @@ function scheduleTournamentAnnouncements({ guildId, channelId, startISO }) {
 ${dayBeforeCTA}`;
       const guild = await client.guilds.fetch(guildId);
       const chan  = await guild.channels.fetch(channelId);
-      if (chan?.isText()) chan.send(msg);
+      if (chan?.isTextBased()) {
+  await chan.send(msg);
+}
     });
   });
   // 3-hour alert
@@ -140,7 +142,9 @@ ${dayBeforeCTA}`;
     const msg = threeTpl.replace('${time}', startDT.toFormat('h:mm a'));
     const guild = await client.guilds.fetch(guildId);
     const chan  = await guild.channels.fetch(channelId);
-    if (chan?.isText()) chan.send(msg);
+    if (chan?.isTextBased()) {
+  await chan.send(msg);
+}
   });
   // go-time announcement
   const startTpl = shuffle(startTemplates)[0];
@@ -149,7 +153,9 @@ ${dayBeforeCTA}`;
 ${startCTA}`;
     const guild = await client.guilds.fetch(guildId);
     const chan  = await guild.channels.fetch(channelId);
-    if (chan?.isText()) chan.send(msg);
+    if (chan?.isTextBased()) {
+  await chan.send(msg);
+}
   });
 }
 
