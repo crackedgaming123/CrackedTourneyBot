@@ -39,9 +39,9 @@ function makeProgressBar(current, total) {
 let questions = [
   { key: 'tournamentName',    type: 'text',   text: '📝 What is the name of your tournament?' },
   { key: 'discordServerName', type: 'text',   text: '📛 What is the name of your Discord server?' },
-  { key: 'startDate',         type: 'date',   text: '📅 Select the tournament start date (EST):' },
+  { key: 'startDate',         type: 'date',   text: '📅 Select the tournament start date:' },
   { key: 'startTime',         type: 'select', text: '⏰ Select start time (EST):', options: makeTimeOptions() },
-  { key: 'endDate',           type: 'date',   text: '📅 Select the tournament end date (EST):' },
+  { key: 'endDate',           type: 'date',   text: '📅 Select the tournament end date:' },
   { key: 'endTime',           type: 'select', text: '⏰ Select end time (EST):', options: makeTimeOptions() },
   { key: 'gameMode',          type: 'select', text: '🎮 What gamemode are you playing?', options: ['1s', '2s', '3s', 'Dropshot', 'Rumble', 'Hoops', 'Hockey', 'Other'] },
   { key: 'gameModeOther',     type: 'text',   text: '📝 Please specify the other game mode:', skip: true },
@@ -111,12 +111,11 @@ client.on('interactionCreate', async ix => {
     case 'info': {
       const info = new EmbedBuilder()
         .setTitle('About Cracked')
-        .setDescription('Free Rocket League tournament hosting with ladder qualifiers.')
+        .setDescription('Free Rocket League tournament hosting with ladder based compeititon.')
         .addFields(
-          { name: 'Platform', value: 'Create free tournaments for all ranks' },
+          { name: 'Platform', value: 'Create free tournaments for all ranks. Quick BO1s rule in this format, but players are able to play as many games as they want!' },
           { name: 'Prize Pool', value: 'Automatic $25 base + $1/team' },
-          { name: 'Creator Earnings', value: '$0.33 per player joined)' },
-          { name: 'Custom Graphics', value: 'Requires 10 days lead time' }
+          { name: 'Creator Earnings', value: '$0.33 per player joined' },
         )
         .setColor(0xff6600);
       return ix.reply({ embeds: [info] });
