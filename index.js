@@ -2,12 +2,7 @@ const { Client, GatewayIntentBits, PermissionsBitField, ActionRowBuilder, Button
 require('dotenv').config();
 
 console.log('🔑 setup role is', process.env.SETUP_ROLE_ID);
-
-
-// Scheduling and templating libraries
-const { DateTime } = require('luxon');
-const schedule = require('node-schedule');
-const { shuffle } = require('lodash');
+console.log(InteractionResponseFlags)
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 const BOT_TOKEN      = process.env.BOT_TOKEN;
@@ -152,21 +147,22 @@ client.on('interactionCreate', async ix => {
         .setColor(0x00ff00);
       return ix.reply({ embeds: [welcome] });
     }
+
     case 'cancelsetup':
       if (sessions.has(uid)) {
         sessions.delete(uid);
-        return ix.reply({ content: '❌ Your setup has been canceled.', flags: InteractionResponseFlags.Ephemeral });
+        return ix.reply({ content: '❌ Your setup has been canceled.'});
       }
-      return ix.reply({ content: '⚠️ No active setup to cancel.', flags: InteractionResponseFlags.Ephemeral });
+      return ix.reply({ content: '⚠️ No active setup to cancel.' });
     case 'setup': {
-      if (sessions.has(uid)) return ix.reply({ content: '🚨 Finish current setup or use `/cancelsetup` first.', flags: InteractionResponseFlags.Ephemeral });
+      if (sessions.has(uid)) return ix.reply({ content: '🚨 Finish current setup or use `/cancelsetup` first.' });
       if (!member.roles.cache.has(SETUP_ROLE_ID))
   return ix.reply({
-  content: `🚫 You need the <@&${SETUP_ROLE_ID}> role to run this.`,
-  flags: InteractionResponseFlags.Ephemeral
+  content: `🚫 You need the <@&${SETUP_ROLE_ID}> role to run this.`
+ 
 });
 
-      await ix.reply({ content: '📝 Starting setup…',flags: InteractionResponseFlags.Ephemeral });
+      await ix.reply({ content: '📝 Starting setup…'});
       sessions.set(uid, {});
       let idx = 0;
       const askNext = async () => {
