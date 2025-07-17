@@ -1,7 +1,8 @@
-const { Client, GatewayIntentBits, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder, TextChannel } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder, TextChannel, InteractionResponseFlags } = require('discord.js');
 require('dotenv').config();
 
 console.log('🔑 setup role is', process.env.SETUP_ROLE_ID);
+
 
 // Scheduling and templating libraries
 const { DateTime } = require('luxon');
@@ -154,17 +155,18 @@ client.on('interactionCreate', async ix => {
     case 'cancelsetup':
       if (sessions.has(uid)) {
         sessions.delete(uid);
-        return ix.reply({ content: '❌ Your setup has been canceled.', ephemeral: true });
+        return ix.reply({ content: '❌ Your setup has been canceled.', flags: InteractionResponseFlags.Ephemeral });
       }
-      return ix.reply({ content: '⚠️ No active setup to cancel.', ephemeral: true });
+      return ix.reply({ content: '⚠️ No active setup to cancel.', flags: InteractionResponseFlags.Ephemeral });
     case 'setup': {
-      if (sessions.has(uid)) return ix.reply({ content: '🚨 Finish current setup or use `/cancelsetup` first.', ephemeral: true });
+      if (sessions.has(uid)) return ix.reply({ content: '🚨 Finish current setup or use `/cancelsetup` first.', flags: InteractionResponseFlags.Ephemeral });
       if (!member.roles.cache.has(SETUP_ROLE_ID))
   return ix.reply({
-    content: `🚫 You need the <@&${SETUP_ROLE_ID}> role to run this.`,
-    ephemeral: true
-  });
-      await ix.reply({ content: '📝 Starting setup…', ephemeral: true });
+  content: `🚫 You need the <@&${SETUP_ROLE_ID}> role to run this.`,
+  flags: InteractionResponseFlags.Ephemeral
+});
+
+      await ix.reply({ content: '📝 Starting setup…',flags: InteractionResponseFlags.Ephemeral });
       sessions.set(uid, {});
       let idx = 0;
       const askNext = async () => {
