@@ -1,6 +1,8 @@
 const { Client, GatewayIntentBits, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, EmbedBuilder, SlashCommandBuilder, TextChannel } = require('discord.js');
 require('dotenv').config();
 
+console.log('🔑 setup role is', process.env.SETUP_ROLE_ID);
+
 // Scheduling and templating libraries
 const { DateTime } = require('luxon');
 const schedule = require('node-schedule');
