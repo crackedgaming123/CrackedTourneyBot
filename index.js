@@ -8,6 +8,8 @@ const { shuffle } = require('lodash');
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 const BOT_TOKEN      = process.env.BOT_TOKEN;
+const SETUP_ROLE_ID = process.env.SETUP_ROLE_ID;  // add this right under your BOT_TOKEN/LOG_CHANNEL_ID
+
 
 // In-memory session store for /setup
 const sessions = new Map();
@@ -155,7 +157,11 @@ client.on('interactionCreate', async ix => {
       return ix.reply({ content: '⚠️ No active setup to cancel.', ephemeral: true });
     case 'setup': {
       if (sessions.has(uid)) return ix.reply({ content: '🚨 Finish current setup or use `/cancelsetup` first.', ephemeral: true });
-      if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild)) return ix.reply({ content: '🚫 Manage Server required.', ephemeral: true });
+      if (!member.roles.cache.has(SETUP_ROLE_ID))
+  return ix.reply({
+    content: `🚫 You need the <@&${SETUP_ROLE_ID}> role to run this.`,
+    ephemeral: true
+  });
       await ix.reply({ content: '📝 Starting setup…', ephemeral: true });
       sessions.set(uid, {});
       let idx = 0;
