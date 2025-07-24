@@ -70,7 +70,6 @@ client.once('ready', async () => {
     new SlashCommandBuilder()
       .setName('setup')
       .setDescription('Start a tournament setup (admins only)')
-      .setDefaultMemberPermissions(PermissionsBitField.Flags.ManageGuild)
       .setDMPermission(false),
     new SlashCommandBuilder().setName('cancelsetup').setDescription('Cancel your active tournament setup')
   ].map(cmd => cmd.toJSON());
