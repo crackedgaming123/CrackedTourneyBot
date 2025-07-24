@@ -176,9 +176,27 @@ client.on('interactionCreate', async ix => {
           const dmRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('dm_summary').setLabel('📬 DM Summary').setStyle(ButtonStyle.Success)
           );
-          await channel.send({ content: 'DM a copy?', components: [dmRow] });
-          const dmc = channel.createMessageComponentCollector({ filter: i => i.user.id===uid, max:1, time:60000 });
-          dmc.on('collect', async btn => { await user.send({ embeds: [summary] }); await btn.update({ content:'✅ Sent!', components:[] }); });
+          const dmc = channel.createMessageComponentCollector({
+  filter: i => i.user.id === uid,
+  max: 1,
+  time: 60000
+});
+dmc.on('collect', async btn => {
+  let dmOk = true;
+  try {
+    await user.send({ embeds: [summary] });
+  } catch {
+    dmOk = false;
+  }
+  // Always acknowledge the button!
+  await btn.update({
+    content: dmOk
+      ? '✅ Sent to your DMs!'
+      : '❌ Couldn’t DM you. Please enable DMs and try again.',
+    components: []
+  });
+});
+
          if (LOG_CHANNEL_ID) {
   try {
     const logCh = await client.channels.fetch(LOG_CHANNEL_ID);
